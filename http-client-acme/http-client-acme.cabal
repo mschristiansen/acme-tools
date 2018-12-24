@@ -1,0 +1,51 @@
+name:                http-client-acme
+version:             0.1.0.0
+synopsis:            HTTP client for the Automatic Certificate Management Environment (ACME)
+description:         HTTP client for the Automatic Certificate Management Environment (ACME). The ACME protocol is supported (and developed) by Let's Encrypt for automatic certificate management.
+license:             BSD3
+license-file:        LICENSE
+author:              Mikkel Christiansen
+maintainer:          mikkel@rheosystems.com
+copyright:           Copyright 2018
+category:            Web
+build-type:          Simple
+extra-source-files:  ChangeLog.md
+cabal-version:       >=1.10
+
+extra-source-files:
+    ChangeLog.md
+    README.md
+
+source-repository head
+  type: git
+  location: https://github.com/mschristiansen/http-client-acme
+
+library
+  exposed-modules:     Network.ACME.JWS
+                       Network.ACME.LetsEncrypt
+                       Network.ACME.Types
+  other-modules:       Network.ACME.Requests
+  build-depends:       aeson
+                     , base >=4.7 && <5
+                     , bytestring
+                     , http-client
+                     , http-client-tls
+                     , http-types
+                     , jose
+                     , lens
+                     , text
+                     , transformers
+  hs-source-dirs:      src
+  default-language:    Haskell2010
+
+test-suite http-client-acme-test
+  type:                exitcode-stdio-1.0
+  main-is:             Spec.hs
+  other-modules:       Network.ACME.JWSSpec
+  hs-source-dirs:      test
+  ghc-options:         -threaded -rtsopts -with-rtsopts=-N
+  build-depends:       base >=4.7 && <5
+                     , aeson
+                     , hspec
+                     , http-client-acme
+  default-language:    Haskell2010
