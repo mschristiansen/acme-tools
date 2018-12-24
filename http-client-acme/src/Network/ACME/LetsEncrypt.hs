@@ -21,5 +21,6 @@ getCertificate = do
   Right (auths, m) <- A.submitOrder http (newOrder dirs) key n acc order
   Right (auth, o) <- A.authorize http (head auths) key m acc
   print $ aChallenges auth
-  _ <- A.proveControl http (curl $ head $ aChallenges auth) key o acc
+  Right (chal, p) <- A.proveControl http (curl $ head $ aChallenges auth) key o acc
+  A.printHttpChallenge key (token chal)
   return ()

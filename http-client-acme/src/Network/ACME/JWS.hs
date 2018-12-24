@@ -3,6 +3,7 @@ module Network.ACME.JWS
   ( AccountUrl(..)
   , generatePrivateKey
   , viewPublicKey
+  , viewThumbprint
   , signNew
   , signExisting
   , signEmpty
@@ -10,7 +11,7 @@ module Network.ACME.JWS
   , dec64url
   ) where
 
-import Control.Lens (Lens', (&), set, view, review, preview)
+import Control.Lens (Lens', (&), set, view, review, preview, re)
 import Control.Monad.Trans.Except (runExceptT)
 import Crypto.JOSE.JWK (JWK, base64url)
 import Crypto.JOSE.JWS hiding (header)
@@ -19,7 +20,7 @@ import Data.Functor.Identity
 import Data.Text (Text)
 import Network.ACME.Types (Nonce(..))
 import qualified Data.ByteString.Lazy as L
-
+import Data.ByteString.Char8
 
 newtype AccountUrl = AccountUrl Text
 
@@ -30,6 +31,12 @@ generatePrivateKey = genJWK (ECGenParam P_256)
 
 viewPublicKey :: JWK -> Maybe JWK
 viewPublicKey = view asPublicKey
+
+viewThumbprint :: JWK -> String
+viewThumbprint jwk = unpack $ view (re (base64url . digest)) d
+  where
+    d :: Digest SHA256
+    d = view thumbprint jwk
 
 signNew :: ToJSON a => JWK -> Nonce -> String -> a -> IO (Either Error (JWS Identity Protection ACMEHeader))
 signNew k (Nonce n) url payload = runExceptT $ signJWS (encode payload) (Identity (header, k))
@@ -63,7 +70,6 @@ enc64url = review base64url
 -- | Base64Url decode
 dec64url :: L.ByteString -> Maybe L.ByteString
 dec64url = preview base64url
-
 
 data ACMEHeader p = ACMEHeader
   { _acmeJwsHeader :: JWSHeader p

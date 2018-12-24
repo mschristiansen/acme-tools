@@ -6,7 +6,7 @@ import Data.Aeson (eitherDecode, encode, decode)
 import Data.Aeson.Types (emptyObject)
 import Data.ByteString.Char8 (unpack)
 import Data.Text.Encoding (decodeUtf8)
-import Network.ACME.JWS (AccountUrl(..), signNew, signExisting, signEmpty)
+import Network.ACME.JWS (AccountUrl(..), signNew, signExisting, signEmpty, viewThumbprint)
 import Network.ACME.Types
 import Network.HTTP.Client
 import Network.HTTP.Client.TLS (tlsManagerSettings)
@@ -114,7 +114,7 @@ authorize manager (AuthUrl url) key nonce acc = do
           (Just auth, Just nonce') -> Right (auth, Nonce $ unpack nonce')
           _                        -> Left "authorize: something went wrong"
 
-proveControl :: Manager -> ChallengeUrl -> JWK -> Nonce -> AccountUrl -> IO (Either String ())
+proveControl :: Manager -> ChallengeUrl -> JWK -> Nonce -> AccountUrl -> IO (Either String (Challenge, Nonce))
 proveControl manager (ChallengeUrl url) key nonce acc = do
   putStrLn "Proving control..."
   payload <- signExisting key nonce url acc emptyObject
@@ -127,8 +127,20 @@ proveControl manager (ChallengeUrl url) key nonce acc = do
                             , requestHeaders = acmeHeaders
                             }
       response <- httpLbs request manager
-      print response
-      return $ Right ()
+      let hs = responseHeaders response
+          mn = lookup hReplayNonce hs
+          mc :: Maybe Challenge
+          mc = decode $ responseBody response
+      return $
+        case (mc, mn) of
+          (Just c, Just nonce') -> Right (c, Nonce $ unpack nonce')
+          _                     -> Left "proveControl: error"
 
+printHttpChallenge :: JWK -> String -> IO ()
+printHttpChallenge jwk token = do
+  putStrLn "Answer on url:"
+  putStrLn $ "/.well-known/acme-challenge/" ++ token
+  putStrLn "with body:"
+  putStrLn $ token ++ "." ++ viewThumbprint jwk
 acmeChallengeUrl :: String
 acmeChallengeUrl = "/.well-known/acme-challenge/"

@@ -2,6 +2,7 @@ resolver: lts-13.0
 packages:
 - http-client-acme
 - wai-middleware-acme
+- server-example
 nix:
   packages:
   - zlib
