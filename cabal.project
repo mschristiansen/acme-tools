@@ -1,1 +1,1 @@
-packages: http-client-acme/ wai-middleware-acme/
+packages: http-client-acme/ wai-middleware-acme/ acme-cli/ server-example/

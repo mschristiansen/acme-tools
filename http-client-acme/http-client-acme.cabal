@@ -24,7 +24,8 @@ library
   exposed-modules:     Network.ACME.JWS
                        Network.ACME.LetsEncrypt
                        Network.ACME.Types
-  other-modules:       Network.ACME.Requests
+                       Network.ACME.Requests
+  -- other-modules:
   build-depends:       aeson
                      , base >=4.7 && <5
                      , bytestring

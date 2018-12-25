@@ -1,3 +1,4 @@
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE GeneralisedNewtypeDeriving #-}
@@ -5,52 +6,108 @@ module Network.ACME.Types where
 
 import GHC.Generics (Generic)
 import Data.Aeson
-
+import Data.Text (Text)
 
 type Url = String
+type Email = String
 
 newtype Nonce = Nonce String deriving Show
 
-newtype AuthUrl = AuthUrl String deriving (Show, FromJSON)
+newtype DirectoryUrl = DirectoryUrl Url deriving (Show, FromJSON)
 
-newtype ChallengeUrl = ChallengeUrl String deriving (Show, FromJSON)
+newtype NonceUrl = NonceUrl Url deriving (Show, FromJSON)
+
+newtype AccountUrl = AccountUrl Url deriving (Show, FromJSON)
+
+newtype AccountId = AccountId Url deriving (Show, FromJSON)
+
+newtype OrderUrl = OrderUrl Url deriving (Show, FromJSON)
+
+newtype OrderId = OrderId Url deriving (Show, FromJSON)
+
+newtype AuthUrl = AuthUrl Url deriving (Show, FromJSON)
+
+newtype ChallengeUrl = ChallengeUrl Url deriving (Show, FromJSON)
+
+newtype FinalizeUrl = FinalizeUrl Url deriving (Show, FromJSON)
+
+newtype CertificateUrl = CertificateUrl Url deriving (Show, FromJSON)
 
 data Directory = Directory
-  { newNonce   :: Url
-  , newAccount :: Url
-  , newOrder   :: Url
+  { newNonce   :: NonceUrl
+  , newAccount :: AccountUrl
+  , newOrder   :: OrderUrl
+  , newAuthz   :: Maybe Url
   , revokeCert :: Url
   , keyChange  :: Url
-  , meta       :: DirectoryMeta
-  } deriving (Generic, Show)
+  , meta       :: Maybe DirectoryMeta
+  } deriving Show
 
 instance FromJSON Directory where
-  parseJSON = genericParseJSON defaultOptions
+  parseJSON = withObject "Directory" $ \o ->
+    Directory <$> o .:  "newNonce"
+              <*> o .:  "newAccount"
+              <*> o .:  "newOrder"
+              <*> o .:? "newAutz"
+              <*> o .:  "revokeCert"
+              <*> o .:  "keyChange"
+              <*> o .:? "meta"
 
 data DirectoryMeta = DirectoryMeta
-  { caaIdentities  :: [String]
-  , termsOfService :: Url
-  , website        :: Url
-  } deriving (Generic, Show)
+  { caaIdentities  :: Maybe [String]
+  , termsOfService :: Maybe Url
+  , website        :: Maybe Url
+  } deriving Show
 
 instance FromJSON DirectoryMeta where
-  parseJSON = genericParseJSON defaultOptions
+  parseJSON = withObject "DirectoryMeta" $ \o ->
+    DirectoryMeta <$> o .:? "caaIdentities"
+                  <*> o .:? "termsOfService"
+                  <*> o .:? "website"
 
-data NewAccount = NewAccount
-  { contact              :: [String]
-  , termsOfServiceAgreed :: Bool
-  } deriving (Generic, Show)
+-- contact must be one or more email addresses prepended with
+-- "mailto:" e.g. "mailto:admin@example1.com". Terms of service (TOS)
+-- must require some user interaction according to ACME
+-- specifications.
+data Account
+  = Account
+    { accountContact   :: [Email]
+    , accountTosAgreed :: Bool
+    }
+  | ExistingAccount
+  deriving Show
 
-instance ToJSON NewAccount where
-  toEncoding = genericToEncoding defaultOptions
+instance ToJSON Account where
+  toJSON acc =
+    case acc of
+      Account{..} ->
+        object [ "contact"              .= accountContact
+               , "termsOfServiceAgreed" .= accountTosAgreed
+               ]
+      ExistingAccount ->
+        object [ "onlyReturnExisting" .= True ]
+  toEncoding acc =
+    case acc of
+      Account{..} ->
+        pairs $ mconcat [ "contact"              .= accountContact
+                        , "termsOfServiceAgreed" .= accountTosAgreed
+                        ]
+      ExistingAccount ->
+        pairs ("onlyReturnExisting" .= True)
 
+-- Let's Encrypt currently haven't implemented the orders field as per
+-- this issue: https://github.com/letsencrypt/boulder/issues/3335
 data AccountStatus = AccountStatus
-  { status :: String
-  , orders :: Maybe Url
-  } deriving (Generic, Show)
+  { status  :: String
+  , contact :: [Email]
+  , orders  :: Maybe OrderId
+  } deriving Show
 
 instance FromJSON AccountStatus where
-  parseJSON = genericParseJSON defaultOptions
+  parseJSON = withObject "AccountStatus" $ \o ->
+    AccountStatus <$> o .:  "status"
+                  <*> o .:  "contact"
+                  <*> o .:? "orders"
 
 data NewOrder = NewOrder
   { identifiers :: [OrderIdentifier]
@@ -82,18 +139,20 @@ data OrderStatus = OrderStatus
   , orNotAfter       :: Maybe String
   , orIdentifiers    :: [OrderIdentifier]
   , orAuthorizations :: [AuthUrl]
-  , orFinalize       :: String
+  , orFinalize       :: FinalizeUrl
+  , orCertificate    :: Maybe CertificateUrl
   } deriving Show
 
 instance FromJSON OrderStatus where
   parseJSON = withObject "OrderStatus" $ \o ->
-    OrderStatus <$> o .: "status"
-                <*> o .: "expires"
+    OrderStatus <$> o .:  "status"
+                <*> o .:  "expires"
                 <*> o .:? "notBefore"
                 <*> o .:? "notAfter"
-                <*> o .: "identifiers"
-                <*> o .: "authorizations"
-                <*> o .: "finalize"
+                <*> o .:  "identifiers"
+                <*> o .:  "authorizations"
+                <*> o .:  "finalize"
+                <*> o .:? "certificate"
 
 data Authorization = Authorization
   { aIdentifier :: OrderIdentifier
@@ -113,7 +172,7 @@ instance FromJSON Authorization where
 
 data Challenge = Challenge
   { ctype   :: String
-  , cstatus :: String
+  , cstatus :: ChallengeStatus
   , curl    :: ChallengeUrl
   , token   :: String
   } deriving Show
@@ -124,3 +183,29 @@ instance FromJSON Challenge where
               <*> o .: "status"
               <*> o .: "url"
               <*> o .: "token"
+
+data ChallengeStatus
+  = ChallengePending
+  | ChallengeProcessing
+  | ChallengeValid
+  | ChallengeInvalid
+  deriving Show
+
+instance FromJSON ChallengeStatus where
+  parseJSON = withText "ChallengeStatus" $ \s ->
+    case s of
+      "pending"    -> pure ChallengePending
+      "processing" -> pure ChallengeProcessing
+      "valid"      -> pure ChallengeValid
+      "invalid"    -> pure ChallengeInvalid
+      _            -> fail "Challenge status not recognised"
+
+data AcmeServerError = AcmeServerError
+  { errorType   :: String
+  , errorDetail :: String
+  }
+
+instance FromJSON AcmeServerError where
+  parseJSON = withObject "AcmeServerError" $ \o ->
+    AcmeServerError <$> o .: "type"
+                    <*> o .: "detail"

@@ -1,16 +1,20 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Network.ACME.Requests where
 
+import Control.Monad (when)
+import Control.Exception (throwIO, Exception)
 import Crypto.JOSE.JWS (JWK)
 import Data.Aeson (eitherDecode, encode, decode)
 import Data.Aeson.Types (emptyObject)
 import Data.ByteString.Char8 (unpack)
 import Data.Text.Encoding (decodeUtf8)
-import Network.ACME.JWS (AccountUrl(..), signNew, signExisting, signEmpty, viewThumbprint)
+import Network.ACME.JWS (signNew, signExisting, signEmpty, viewThumbprint)
 import Network.ACME.Types
 import Network.HTTP.Client
 import Network.HTTP.Client.TLS (tlsManagerSettings)
+import Network.HTTP.Types (status200, status201, status204)
 import Network.HTTP.Types.Header (RequestHeaders, HeaderName, hContentType, hUserAgent, hAcceptLanguage, hLocation, hAccept)
+import qualified Data.Text as T (unpack, pack)
 
 
 hReplayNonce :: HeaderName
@@ -28,95 +32,110 @@ acmeHeaders =
   , (hAcceptLanguage, "en")
   ]
 
-getDirectory :: Manager -> Url -> IO (Either String Directory)
-getDirectory http url = do
-  putStrLn "Getting directory..."
-  request <- parseRequest url
-  response <- httpLbs request http
-  return $ eitherDecode $ responseBody response
+getDirectory :: Manager -> DirectoryUrl -> IO Directory
+getDirectory http (DirectoryUrl url) = do
+  req <- parseRequest url
+  resp <- httpLbs req http
+  let status = responseStatus resp
+  if (status /= status200)
+    then throwIO $ AcmeException $ "getDirectory response: " ++ show status
+    else case eitherDecode (responseBody resp) of
+           Left err -> throwIO $ AcmeException err
+           Right dirs -> return dirs
 
-getNonce :: Manager -> String -> IO (Either String Nonce)
-getNonce manager url = do
-  putStrLn "Getting nonce..."
+getNonce :: Manager -> NonceUrl -> IO Nonce
+getNonce manager (NonceUrl url) = do
   initial <- parseRequest url
-  let request = initial { method = "HEAD" }
-  response <- httpLbs request manager
-  let mnonce = fmap (Nonce . unpack) <$> lookup hReplayNonce $ responseHeaders response
-  return $ case mnonce of
-    Nothing -> Left "getNonce: no nonce in header"
-    Just nonce -> Right nonce
+  let req = initial { method = "HEAD" }
+  resp <- httpLbs req manager
+  let mnonce = fmap (Nonce . unpack) <$> lookup hReplayNonce $ responseHeaders resp
+      status = responseStatus resp
+  -- Specifications says response code should be 200, but
+  -- implementation gives 204.
+  --
+  -- See table in section
+  -- https://tools.ietf.org/html/draft-ietf-acme-acme-18#section-7.1
+  if (status /= status204)
+    then throwIO $ AcmeException $ "getNonce response: " ++ show status
+    else case mnonce of
+           Nothing -> throwIO $ AcmeException "getNonce: no nonce in header"
+           Just nonce -> return nonce
 
-createAccount :: Manager -> Url -> JWK -> Nonce -> NewAccount -> IO (Either String (AccountUrl, Nonce))
-createAccount manager url key nonce account = do
-  putStrLn "Creating account..."
+createAccount :: Manager -> AccountUrl -> JWK -> Nonce -> Account -> IO (AccountId, AccountStatus, Nonce)
+createAccount manager (AccountUrl url) key nonce account = do
   payload <- signNew key nonce url account
   case payload of
-    Left e -> return $ Left $ show e
+    Left e -> throwIO $ AcmeException $ "createAccount payload error: " ++ show e
     Right spayload -> do
       initial <- parseRequest url
-      let request = initial { method = "POST"
-                            , requestBody = RequestBodyLBS $ encode spayload
-                            , requestHeaders = acmeHeaders
-                            }
-      response <- httpLbs request manager
-      let hs = responseHeaders response
+      let req = initial { method = "POST"
+                        , requestBody = RequestBodyLBS $ encode spayload
+                        , requestHeaders = acmeHeaders
+                        }
+      resp <- httpLbs req manager
+      let hs = responseHeaders resp
           mloc = lookup hLocation hs
-          mn   = lookup hReplayNonce hs
-      return $
-        case (mloc, mn) of
-          (Just loc, Just nonce') -> Right (AccountUrl $ decodeUtf8 loc, Nonce $ unpack nonce')
-          _                       -> Left "createAccount: something went wrong"
+          mn = lookup hReplayNonce hs
+          status = responseStatus resp
+          macc :: Maybe AccountStatus
+          macc = decode $ responseBody resp
+      -- 200 returned for an existing account
+      -- 201 returned for creating a new account
+      if status == status200 || status == status201
+        then case (mloc, macc, mn) of
+               (Just loc, Just acc, Just nonce') -> return (AccountId $ unpack loc, acc, Nonce $ unpack nonce')
+               _                       -> throwIO $ AcmeException "createAccount: account url, account, or nonce not valid"
+        else throwIO $ AcmeException $ "createAccount response: " ++ show status
 
-submitOrder :: Manager -> Url -> JWK -> Nonce -> AccountUrl -> NewOrder -> IO (Either String ([AuthUrl], Nonce))
-submitOrder manager url key nonce acc order = do
-  putStrLn "Submitting Order"
+submitOrder :: Manager -> OrderUrl -> JWK -> AccountId -> Nonce -> NewOrder -> IO ((OrderId, OrderStatus, Nonce))
+submitOrder manager (OrderUrl url) key acc nonce order = do
   payload <- signExisting key nonce url acc order
   case payload of
-    Left e -> return $ Left $ show e
+    Left e -> throwIO $ AcmeException $ "submitOrder error: " ++ show e
     Right spayload -> do
       initial <- parseRequest url
-      let request = initial { method = "POST"
-                            , requestBody = RequestBodyLBS $ encode spayload
-                            , requestHeaders = acmeHeaders
-                            }
-      response <- httpLbs request manager
-      let hs = responseHeaders response
+      let req = initial { method = "POST"
+                        , requestBody = RequestBodyLBS $ encode spayload
+                        , requestHeaders = acmeHeaders
+                        }
+      resp <- httpLbs req manager
+      let hs = responseHeaders resp
+          mloc = lookup hLocation hs
           mn = lookup hReplayNonce hs
-          mbody :: Maybe OrderStatus
-          mbody = decode $ responseBody response
-          auths = maybe [] orAuthorizations mbody
-      putStrLn $ "response code: " ++ show (responseStatus response)
-      putStrLn $ "order status: " ++ maybe "-" orStatus mbody
-      return $
-        case mn of
-          (Just nonce') -> Right (auths, Nonce $ unpack nonce')
-          _             -> Left "submitOrder: something went wrong"
+          morder :: Maybe OrderStatus
+          morder = decode $ responseBody resp
+          status = responseStatus resp
+      if (status /= status201)
+        then throwIO $ AcmeException ""
+        else case (mloc, morder, mn) of
+               (Just loc, Just order, Just nonce') -> return (OrderId $ unpack loc, order, Nonce $ unpack nonce')
+               _             -> throwIO $ AcmeException $ "submitOrder: no OrderStatus or nonce"
 
-authorize :: Manager -> AuthUrl -> JWK -> Nonce -> AccountUrl -> IO (Either String (Authorization, Nonce))
-authorize manager (AuthUrl url) key nonce acc = do
-  putStrLn "Authorizing..."
+fetchChallenges :: Manager -> AuthUrl -> JWK -> AccountId -> Nonce -> IO (Authorization, Nonce)
+fetchChallenges manager (AuthUrl url) key acc nonce = do
   payload <- signEmpty key nonce url acc
   case payload of
-    Left e -> return $ Left $ show e
+    Left e -> throwIO $ AcmeException $ "fetchChallenges: " ++ show e
     Right spayload -> do
       initial <- parseRequest url
-      let request = initial { method = "POST"
-                            , requestBody = RequestBodyLBS $ encode spayload
-                            , requestHeaders = (hAccept, "application/pkix-cert"):acmeHeaders
-                            }
-      response <- httpLbs request manager
-      let hs = responseHeaders response
+      let req = initial { method = "POST"
+                        , requestBody = RequestBodyLBS $ encode spayload
+                        , requestHeaders = (hAccept, "application/pkix-cert"):acmeHeaders
+                        }
+      resp <- httpLbs req manager
+      let hs = responseHeaders resp
           mn = lookup hReplayNonce hs
           mauth :: Maybe Authorization
-          mauth = decode $ responseBody response
-      return $
-        case (mauth, mn) of
-          (Just auth, Just nonce') -> Right (auth, Nonce $ unpack nonce')
-          _                        -> Left "authorize: something went wrong"
+          mauth = decode $ responseBody resp
+          status = responseStatus resp
+      if (status /= status200)
+        then throwIO $ AcmeException $ "fetchChallenges response" ++ show status
+        else case (mauth, mn) of
+          (Just auth, Just nonce') -> return (auth, Nonce $ unpack nonce')
+          _                        -> throwIO $ AcmeException "fetchChallenges: no auth or nonce"
 
-proveControl :: Manager -> ChallengeUrl -> JWK -> Nonce -> AccountUrl -> IO (Either String (Challenge, Nonce))
-proveControl manager (ChallengeUrl url) key nonce acc = do
-  putStrLn "Proving control..."
+respondToChallenges :: Manager -> ChallengeUrl -> JWK -> Nonce -> AccountId -> IO (Either String (Challenge, Nonce))
+respondToChallenges manager (ChallengeUrl url) key nonce acc = do
   payload <- signExisting key nonce url acc emptyObject
   case payload of
     Left e -> return $ Left $ show e
@@ -136,11 +155,32 @@ proveControl manager (ChallengeUrl url) key nonce acc = do
           (Just c, Just nonce') -> Right (c, Nonce $ unpack nonce')
           _                     -> Left "proveControl: error"
 
+
+pollForStatus :: IO ()
+pollForStatus = undefined
+
+finalizeOrder :: IO ()
+finalizeOrder = undefined
+
+downloadCertificate :: IO ()
+downloadCertificate = undefined
+
 printHttpChallenge :: JWK -> String -> IO ()
 printHttpChallenge jwk token = do
   putStrLn "Answer on url:"
   putStrLn $ "/.well-known/acme-challenge/" ++ token
   putStrLn "with body:"
-  putStrLn $ token ++ "." ++ viewThumbprint jwk
+  putStrLn $ token ++ "." ++ T.unpack (viewThumbprint jwk)
+
 acmeChallengeUrl :: String
 acmeChallengeUrl = "/.well-known/acme-challenge/"
+
+
+
+
+data AcmeException
+  = AcmeException String
+  | AccountDoesNotExist
+  deriving Show
+
+instance Exception AcmeException
