@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE DeriveGeneric #-}
@@ -26,8 +27,6 @@ newtype OrderUrl = OrderUrl Url deriving (Show, FromJSON)
 newtype OrderId = OrderId Url deriving (Show, FromJSON)
 
 newtype AuthUrl = AuthUrl Url deriving (Show, FromJSON)
-
-newtype ChallengeUrl = ChallengeUrl Url deriving (Show, FromJSON)
 
 newtype FinalizeUrl = FinalizeUrl Url deriving (Show, FromJSON)
 
@@ -170,11 +169,16 @@ instance FromJSON Authorization where
                   <*> o .:  "challenges"
                   <*> o .:? "wildcard"
 
+
+newtype ChallengeUrl = ChallengeUrl Url deriving (Show, FromJSON)
+
+newtype Token = Token String deriving (Show, FromJSON)
+
 data Challenge = Challenge
   { ctype   :: String
   , cstatus :: ChallengeStatus
   , curl    :: ChallengeUrl
-  , token   :: String
+  , token   :: Token
   } deriving Show
 
 instance FromJSON Challenge where
@@ -192,8 +196,8 @@ data ChallengeStatus
   deriving Show
 
 instance FromJSON ChallengeStatus where
-  parseJSON = withText "ChallengeStatus" $ \s ->
-    case s of
+  parseJSON =
+    withText "ChallengeStatus" $ \case
       "pending"    -> pure ChallengePending
       "processing" -> pure ChallengeProcessing
       "valid"      -> pure ChallengeValid

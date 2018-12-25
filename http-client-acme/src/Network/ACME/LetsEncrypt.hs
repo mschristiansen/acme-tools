@@ -24,5 +24,4 @@ getCertificate = do
   print $ aChallenges auth
   Right (chal, p) <- A.respondToChallenges http key acc o (curl $ head $ aChallenges auth)
   print chal
-  A.printHttpChallenge key (token chal)
   return ()

@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Network.ACME.JWS
-  ( generatePrivateKey
+  ( JWK
+  , generatePrivateKey
   , writeKey
   , readKey
   , viewPublicKey
@@ -20,7 +21,7 @@ import Crypto.JOSE.JWS hiding (header)
 import Data.Aeson (ToJSON, encode, (.=), decode)
 import Data.Functor.Identity
 import Data.Text (Text, pack)
-import Data.Text.Strict.Lens (utf8)
+import Data.Text.Strict.Lens (utf8, _Text)
 import Network.ACME.Types (AccountId(..), Nonce(..))
 import Data.ByteString.Lazy (ByteString, writeFile, readFile)
 
@@ -40,8 +41,8 @@ readKey fp = decode <$> readFile fp
 viewPublicKey :: JWK -> Maybe JWK
 viewPublicKey = view asPublicKey
 
-viewThumbprint :: JWK -> Text
-viewThumbprint jwk = view (re (base64url . digest) . utf8) d
+viewThumbprint :: JWK -> String
+viewThumbprint jwk = view _Text $ view (re (base64url . digest) . utf8) d
   where
     d :: Digest SHA256
     d = view thumbprint jwk
@@ -86,15 +87,15 @@ data ACMEHeader p = ACMEHeader
   }
 
 acmeJwsHeader :: Lens' (ACMEHeader p) (JWSHeader p)
-acmeJwsHeader f s@(ACMEHeader { _acmeJwsHeader = a}) =
+acmeJwsHeader f s@ACMEHeader{ _acmeJwsHeader = a} =
   fmap (\a' -> s { _acmeJwsHeader = a'}) (f a)
 
 acmeNonce :: Lens' (ACMEHeader p) String
-acmeNonce f s@(ACMEHeader { _acmeNonce = a}) =
+acmeNonce f s@ACMEHeader{ _acmeNonce = a} =
   fmap (\a' -> s { _acmeNonce = a'}) (f a)
 
 acmeUrl :: Lens' (ACMEHeader p) String
-acmeUrl f  s@(ACMEHeader { _acmeUrl = a}) =
+acmeUrl f  s@ACMEHeader{ _acmeUrl = a} =
   fmap (\a' -> s { _acmeUrl = a'}) (f a)
 
 instance HasJWSHeader ACMEHeader where

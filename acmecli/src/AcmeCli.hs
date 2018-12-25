@@ -6,9 +6,9 @@ module AcmeCli
 import Control.Exception (SomeException, catch)
 import Control.Monad (when)
 import Data.Maybe (fromMaybe)
-import Network.ACME.JWS (readKey, writeKey, generatePrivateKey)
+import Network.ACME.JWS (JWK, readKey, writeKey, generatePrivateKey)
 import Network.ACME.LetsEncrypt (directoryUrl)
-import Network.ACME.Requests (newTlsManager, getDirectory, getNonce, createAccount, submitOrder, fetchChallenges)
+import Network.ACME.Requests (newTlsManager, getDirectory, getNonce, createAccount, submitOrder, fetchChallenges, createChallengeDnsRecord, createChallengeHttpUrl, createChallengeHttpBody)
 import Network.ACME.Types (Account(..), Directory(..), AccountStatus(..), NewOrder(..), OrderIdentifier(..), OrderStatus(..), Nonce, Authorization(..), Challenge(..))
 
 
@@ -48,7 +48,7 @@ main = do
     printOrder order'
     putStrLn "Fetching challenges..."
     (auths, _) <- mapMwithNonce (fetchChallenges http key aid) (orAuthorizations order') n
-    mapM_ printAuthorization auths
+    mapM_ (printAuthorization key) auths
     return ()
 
 
@@ -92,17 +92,28 @@ printOrder OrderStatus{..} = do
   putStrLn $ "Order authorizations : " ++ concat (map show orAuthorizations)
   putStrLn $ "Order finalize       : " ++ show orFinalize
 
-printAuthorization :: Authorization -> IO ()
-printAuthorization Authorization{..} = do
+printAuthorization :: JWK -> Authorization -> IO ()
+printAuthorization key Authorization{..} = do
   putStrLn $ "Authorization for    : " ++ show aIdentifier
   putStrLn $ "Authorization status : " ++ aStatus
   putStrLn $ "Authorization expires: " ++ fromMaybe "-" aExpires
-  mapM_ printChallenge aChallenges
+  putStrLn $ "Complete one of the below challenges for each domain"
+  mapM_ (printChallenge key aIdentifier) aChallenges
 
-printChallenge :: Challenge -> IO ()
-printChallenge Challenge{..} = do
+printChallenge :: JWK -> OrderIdentifier -> Challenge -> IO ()
+printChallenge key oid Challenge{..} = do
   putStrLn $ "Challenge type       : " ++ ctype
   putStrLn $ "Challenge status     : " ++ show cstatus
+  case ctype of
+    "dns-01" -> do
+      putStrLn "Add this DNS TXT record   : "
+      putStrLn $ "  " ++ createChallengeDnsRecord oid key token
+    "http-01" -> do
+      putStrLn "On this url:"
+      putStrLn $ "  " ++ createChallengeHttpUrl oid token
+      putStrLn "And give this response:"
+      putStrLn $ "  " ++ createChallengeHttpBody key token
+    _ -> putStrLn $ "Unknown challenge: " ++ ctype
 
 mapMwithNonce :: (Nonce -> a -> IO (b, Nonce)) -> [a] -> Nonce -> IO ([b], Nonce)
 mapMwithNonce f xs n = go [] xs n

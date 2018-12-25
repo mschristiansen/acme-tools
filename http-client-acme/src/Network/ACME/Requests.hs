@@ -37,7 +37,7 @@ getDirectory http (DirectoryUrl url) = do
   req <- parseRequest url
   resp <- httpLbs req http
   let status = responseStatus resp
-  if (status /= status200)
+  if status /= status200
     then throwIO $ AcmeException $ "getDirectory response: " ++ show status
     else case eitherDecode (responseBody resp) of
            Left err -> throwIO $ AcmeException err
@@ -55,7 +55,7 @@ getNonce manager (NonceUrl url) = do
   --
   -- See table in section
   -- https://tools.ietf.org/html/draft-ietf-acme-acme-18#section-7.1
-  if (status /= status204)
+  if status /= status204
     then throwIO $ AcmeException $ "getNonce response: " ++ show status
     else case mnonce of
            Nothing -> throwIO $ AcmeException "getNonce: no nonce in header"
@@ -87,7 +87,7 @@ createAccount manager key nonce (AccountUrl url) account = do
                _                       -> throwIO $ AcmeException "createAccount: account url, account, or nonce not valid"
         else throwIO $ AcmeException $ "createAccount response: " ++ show status
 
-submitOrder :: Manager -> JWK -> AccountId -> Nonce -> OrderUrl -> NewOrder -> IO ((OrderId, OrderStatus, Nonce))
+submitOrder :: Manager -> JWK -> AccountId -> Nonce -> OrderUrl -> NewOrder -> IO (OrderId, OrderStatus, Nonce)
 submitOrder manager key acc nonce (OrderUrl url) order = do
   payload <- signExisting key nonce url acc order
   case payload of
@@ -105,11 +105,11 @@ submitOrder manager key acc nonce (OrderUrl url) order = do
           morder :: Maybe OrderStatus
           morder = decode $ responseBody resp
           status = responseStatus resp
-      if (status /= status201)
+      if status /= status201
         then throwIO $ AcmeException ""
         else case (mloc, morder, mn) of
                (Just loc, Just order, Just nonce') -> return (OrderId $ unpack loc, order, Nonce $ unpack nonce')
-               _             -> throwIO $ AcmeException $ "submitOrder: no OrderStatus or nonce"
+               _             -> throwIO $ AcmeException "submitOrder: no OrderStatus or nonce"
 
 fetchChallenges :: Manager -> JWK -> AccountId -> Nonce -> AuthUrl -> IO (Authorization, Nonce)
 fetchChallenges manager key acc nonce (AuthUrl url) = do
@@ -128,7 +128,7 @@ fetchChallenges manager key acc nonce (AuthUrl url) = do
           mauth :: Maybe Authorization
           mauth = decode $ responseBody resp
           status = responseStatus resp
-      if (status /= status200)
+      if status /= status200
         then throwIO $ AcmeException $ "fetchChallenges response" ++ show status
         else case (mauth, mn) of
           (Just auth, Just nonce') -> return (auth, Nonce $ unpack nonce')
@@ -165,18 +165,6 @@ finalizeOrder = undefined
 downloadCertificate :: IO ()
 downloadCertificate = undefined
 
-printHttpChallenge :: JWK -> String -> IO ()
-printHttpChallenge jwk token = do
-  putStrLn "Answer on url:"
-  putStrLn $ "/.well-known/acme-challenge/" ++ token
-  putStrLn "with body:"
-  putStrLn $ token ++ "." ++ T.unpack (viewThumbprint jwk)
-
-acmeChallengeUrl :: String
-acmeChallengeUrl = "/.well-known/acme-challenge/"
-
-
-
 
 data AcmeException
   = AcmeException String
@@ -184,3 +172,21 @@ data AcmeException
   deriving Show
 
 instance Exception AcmeException
+
+-- https://tools.ietf.org/html/draft-ietf-acme-acme-15#section-8.1
+keyAuthorization :: JWK -> Token -> String
+keyAuthorization key (Token t) = t ++ "." ++ viewThumbprint key
+
+-- https://tools.ietf.org/html/draft-ietf-acme-acme-15#section-8.3
+createChallengeHttpUrl :: OrderIdentifier -> Token -> Url
+createChallengeHttpUrl (OrderIdentifier domain) (Token t) =
+  "http://" ++ domain ++ "/.well-known/acme-challenge/" ++ t
+
+-- https://tools.ietf.org/html/draft-ietf-acme-acme-15#section-8.3
+createChallengeHttpBody :: JWK -> Token -> String
+createChallengeHttpBody = keyAuthorization
+
+-- https://tools.ietf.org/html/draft-ietf-acme-acme-15#section-8.4
+createChallengeDnsRecord :: OrderIdentifier -> JWK -> Token -> String
+createChallengeDnsRecord (OrderIdentifier domain) k t =
+  "_acme-challenge." ++ domain ++ ". 300 IN TXT \"" ++ keyAuthorization k t ++"\""
