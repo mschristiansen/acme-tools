@@ -15,14 +15,14 @@ getCertificate = do
   nonce <- A.getNonce http (newNonce dirs)
   let account = Account ["mailto:admin@example1.com"] True
   key <- generatePrivateKey
-  (acc, _, n) <- A.createAccount http (newAccount dirs) key nonce account
+  (acc, _, n) <- A.createAccount http key nonce (newAccount dirs) account
 
   let order = NewOrder [OrderIdentifier "example1.com"] Nothing Nothing
-  (oid, order', m) <- A.submitOrder http (newOrder dirs) key acc n order
+  (oid, order', m) <- A.submitOrder http key acc n (newOrder dirs) order
   putStrLn $ "Order Id; " ++ show oid
-  (auth, o) <- A.fetchChallenges http (head $ orAuthorizations order') key acc m
+  (auth, o) <- A.fetchChallenges http key acc m (head $ orAuthorizations order')
   print $ aChallenges auth
-  Right (chal, p) <- A.respondToChallenges http (curl $ head $ aChallenges auth) key o acc
+  Right (chal, p) <- A.respondToChallenges http key acc o (curl $ head $ aChallenges auth)
   print chal
   A.printHttpChallenge key (token chal)
   return ()

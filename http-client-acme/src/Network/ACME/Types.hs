@@ -118,7 +118,7 @@ data NewOrder = NewOrder
 instance ToJSON NewOrder where
   toEncoding = genericToEncoding defaultOptions
 
-
+-- This is the domain name that the order is for.
 newtype OrderIdentifier = OrderIdentifier String deriving Show
 
 -- There is currently only the option for DNS identification

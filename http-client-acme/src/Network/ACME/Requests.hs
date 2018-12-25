@@ -61,8 +61,8 @@ getNonce manager (NonceUrl url) = do
            Nothing -> throwIO $ AcmeException "getNonce: no nonce in header"
            Just nonce -> return nonce
 
-createAccount :: Manager -> AccountUrl -> JWK -> Nonce -> Account -> IO (AccountId, AccountStatus, Nonce)
-createAccount manager (AccountUrl url) key nonce account = do
+createAccount :: Manager -> JWK -> Nonce -> AccountUrl -> Account -> IO (AccountId, AccountStatus, Nonce)
+createAccount manager key nonce (AccountUrl url) account = do
   payload <- signNew key nonce url account
   case payload of
     Left e -> throwIO $ AcmeException $ "createAccount payload error: " ++ show e
@@ -87,8 +87,8 @@ createAccount manager (AccountUrl url) key nonce account = do
                _                       -> throwIO $ AcmeException "createAccount: account url, account, or nonce not valid"
         else throwIO $ AcmeException $ "createAccount response: " ++ show status
 
-submitOrder :: Manager -> OrderUrl -> JWK -> AccountId -> Nonce -> NewOrder -> IO ((OrderId, OrderStatus, Nonce))
-submitOrder manager (OrderUrl url) key acc nonce order = do
+submitOrder :: Manager -> JWK -> AccountId -> Nonce -> OrderUrl -> NewOrder -> IO ((OrderId, OrderStatus, Nonce))
+submitOrder manager key acc nonce (OrderUrl url) order = do
   payload <- signExisting key nonce url acc order
   case payload of
     Left e -> throwIO $ AcmeException $ "submitOrder error: " ++ show e
@@ -111,8 +111,8 @@ submitOrder manager (OrderUrl url) key acc nonce order = do
                (Just loc, Just order, Just nonce') -> return (OrderId $ unpack loc, order, Nonce $ unpack nonce')
                _             -> throwIO $ AcmeException $ "submitOrder: no OrderStatus or nonce"
 
-fetchChallenges :: Manager -> AuthUrl -> JWK -> AccountId -> Nonce -> IO (Authorization, Nonce)
-fetchChallenges manager (AuthUrl url) key acc nonce = do
+fetchChallenges :: Manager -> JWK -> AccountId -> Nonce -> AuthUrl -> IO (Authorization, Nonce)
+fetchChallenges manager key acc nonce (AuthUrl url) = do
   payload <- signEmpty key nonce url acc
   case payload of
     Left e -> throwIO $ AcmeException $ "fetchChallenges: " ++ show e
@@ -134,8 +134,8 @@ fetchChallenges manager (AuthUrl url) key acc nonce = do
           (Just auth, Just nonce') -> return (auth, Nonce $ unpack nonce')
           _                        -> throwIO $ AcmeException "fetchChallenges: no auth or nonce"
 
-respondToChallenges :: Manager -> ChallengeUrl -> JWK -> Nonce -> AccountId -> IO (Either String (Challenge, Nonce))
-respondToChallenges manager (ChallengeUrl url) key nonce acc = do
+respondToChallenges :: Manager -> JWK -> AccountId -> Nonce -> ChallengeUrl -> IO (Either String (Challenge, Nonce))
+respondToChallenges manager key acc nonce (ChallengeUrl url) = do
   payload <- signExisting key nonce url acc emptyObject
   case payload of
     Left e -> return $ Left $ show e

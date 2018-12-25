@@ -3,12 +3,13 @@ module AcmeCli
     ( main
     ) where
 
-import Control.Monad (when)
-import Network.ACME.JWS (readKey, writeKey, generatePrivateKey)
 import Control.Exception (SomeException, catch)
+import Control.Monad (when)
+import Data.Maybe (fromMaybe)
+import Network.ACME.JWS (readKey, writeKey, generatePrivateKey)
 import Network.ACME.LetsEncrypt (directoryUrl)
 import Network.ACME.Requests (newTlsManager, getDirectory, getNonce, createAccount, submitOrder, fetchChallenges)
-import Network.ACME.Types (Account(..), Directory(..), AccountStatus(..), NewOrder(..), OrderIdentifier(..), OrderStatus(..), Nonce)
+import Network.ACME.Types (Account(..), Directory(..), AccountStatus(..), NewOrder(..), OrderIdentifier(..), OrderStatus(..), Nonce, Authorization(..), Challenge(..))
 
 
 keyLocation :: String
@@ -32,9 +33,9 @@ main = do
       return k
   putStr "Checking for account with Let's Encrypt ... "
   http <- newTlsManager
-  dirs <- getDirectory http directoryUrl
-  nonce <- getNonce http (newNonce dirs)
-  (aid, acc, n) <- createAccount http (newAccount dirs) key nonce ExistingAccount
+  Directory{..} <- getDirectory http directoryUrl
+  nonce <- getNonce http newNonce
+  (aid, acc, n) <- createAccount http key nonce newAccount ExistingAccount
   putStrLn "Found account"
   putStrLn $ "Account ID : " ++ show aid
   printAccount acc
@@ -42,12 +43,12 @@ main = do
   yes <- yesOrNo
   when yes $ do
     order <- enterOrder
-    (oid, order', n) <- submitOrder http (newOrder dirs) key aid n order
+    (oid, order', n) <- submitOrder http key aid n newOrder order
     putStrLn $ "Order ID : " ++ show oid
     printOrder order'
     putStrLn "Fetching challenges..."
-    auths <- mapMwithNonce (\url -> fetchChallenges http url key aid) (orAuthorizations order') n
-    print auths
+    (auths, _) <- mapMwithNonce (fetchChallenges http key aid) (orAuthorizations order') n
+    mapM_ printAuthorization auths
     return ()
 
 
@@ -91,10 +92,22 @@ printOrder OrderStatus{..} = do
   putStrLn $ "Order authorizations : " ++ concat (map show orAuthorizations)
   putStrLn $ "Order finalize       : " ++ show orFinalize
 
-mapMwithNonce :: (a -> Nonce -> IO (b, Nonce)) -> [a] -> Nonce -> IO ([b], Nonce)
+printAuthorization :: Authorization -> IO ()
+printAuthorization Authorization{..} = do
+  putStrLn $ "Authorization for    : " ++ show aIdentifier
+  putStrLn $ "Authorization status : " ++ aStatus
+  putStrLn $ "Authorization expires: " ++ fromMaybe "-" aExpires
+  mapM_ printChallenge aChallenges
+
+printChallenge :: Challenge -> IO ()
+printChallenge Challenge{..} = do
+  putStrLn $ "Challenge type       : " ++ ctype
+  putStrLn $ "Challenge status     : " ++ show cstatus
+
+mapMwithNonce :: (Nonce -> a -> IO (b, Nonce)) -> [a] -> Nonce -> IO ([b], Nonce)
 mapMwithNonce f xs n = go [] xs n
   where
     go bs [] n' = return (reverse bs, n')
     go bs (a:as) n' = do
-      (b, n'') <- f a n'
+      (b, n'') <- f n' a
       go (b:bs) as n''
