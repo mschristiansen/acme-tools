@@ -22,6 +22,6 @@ getCertificate = do
   putStrLn $ "Order Id; " ++ show oid
   (auth, o) <- A.fetchChallenges http key acc m (head $ orAuthorizations order')
   print $ aChallenges auth
-  Right (chal, p) <- A.respondToChallenges http key acc o (curl $ head $ aChallenges auth)
+  (chal, p) <- A.respondToChallenges http key acc o (curl $ head $ aChallenges auth)
   print chal
   return ()

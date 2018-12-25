@@ -188,6 +188,9 @@ instance FromJSON Challenge where
               <*> o .: "url"
               <*> o .: "token"
 
+isChallengeType :: String -> Challenge -> Bool
+isChallengeType s = (==) s . ctype
+
 data ChallengeStatus
   = ChallengePending
   | ChallengeProcessing

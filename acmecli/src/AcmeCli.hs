@@ -8,8 +8,8 @@ import Control.Monad (when)
 import Data.Maybe (fromMaybe)
 import Network.ACME.JWS (JWK, readKey, writeKey, generatePrivateKey)
 import Network.ACME.LetsEncrypt (directoryUrl)
-import Network.ACME.Requests (newTlsManager, getDirectory, getNonce, createAccount, submitOrder, fetchChallenges, createChallengeDnsRecord, createChallengeHttpUrl, createChallengeHttpBody)
-import Network.ACME.Types (Account(..), Directory(..), AccountStatus(..), NewOrder(..), OrderIdentifier(..), OrderStatus(..), Nonce, Authorization(..), Challenge(..))
+import Network.ACME.Requests (newTlsManager, getDirectory, getNonce, createAccount, submitOrder, fetchChallenges, createChallengeDnsRecord, createChallengeHttpUrl, createChallengeHttpBody, respondToChallenges)
+import Network.ACME.Types (Account(..), Directory(..), AccountStatus(..), NewOrder(..), OrderIdentifier(..), OrderStatus(..), Nonce, Authorization(..), Challenge(..), isChallengeType)
 
 
 keyLocation :: String
@@ -47,8 +47,21 @@ main = do
     putStrLn $ "Order ID : " ++ show oid
     printOrder order'
     putStrLn "Fetching challenges..."
-    (auths, _) <- mapMwithNonce (fetchChallenges http key aid) (orAuthorizations order') n
+    (auths, m) <- mapMwithNonce (fetchChallenges http key aid) (orAuthorizations order') n
     mapM_ (printAuthorization key) auths
+    ct <- selectChallengeType
+    (_, o) <- mapMwithNonce (respondToChallenges http key aid)  (map curl $ filter (isChallengeType ct) $ concat $ map aChallenges auths) m
+    let waitStatus :: Nonce -> IO ()
+        waitStatus n = do
+          putStrLn "Check status again?"
+          yes <- yesOrNo
+          if yes
+            then do
+              (auths, n') <- mapMwithNonce (fetchChallenges http key aid) (orAuthorizations order') n
+              mapM_ (printAuthorization key) auths
+              waitStatus n'
+            else waitStatus n
+    waitStatus o
     return ()
 
 
@@ -78,6 +91,15 @@ enterOrder = (\ds -> NewOrder ds Nothing Nothing) <$> go []
           yes <- yesOrNo
           if yes then go ds' else return ds'
 
+selectChallengeType :: IO String
+selectChallengeType = do
+  putStrLn "Type 'dns' or 'http' to continue and respond to those challenges"
+  s <- getLine
+  case s of
+    "dns" -> return "dns-01"
+    "http" -> return "http-01"
+    _ -> selectChallengeType
+
 printAccount :: AccountStatus -> IO ()
 printAccount AccountStatus{..} = do
   putStrLn $ "Account status       : " ++ status
@@ -104,6 +126,7 @@ printChallenge :: JWK -> OrderIdentifier -> Challenge -> IO ()
 printChallenge key oid Challenge{..} = do
   putStrLn $ "Challenge type       : " ++ ctype
   putStrLn $ "Challenge status     : " ++ show cstatus
+  putStrLn $ "Challenge url        : " ++ show curl
   case ctype of
     "dns-01" -> do
       putStrLn "Add this DNS TXT record   : "

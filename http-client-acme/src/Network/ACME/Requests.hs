@@ -129,32 +129,33 @@ fetchChallenges manager key acc nonce (AuthUrl url) = do
           mauth = decode $ responseBody resp
           status = responseStatus resp
       if status /= status200
-        then throwIO $ AcmeException $ "fetchChallenges response" ++ show status
+        then throwIO $ AcmeException $ "fetchChallenges response:" ++ show status
         else case (mauth, mn) of
           (Just auth, Just nonce') -> return (auth, Nonce $ unpack nonce')
           _                        -> throwIO $ AcmeException "fetchChallenges: no auth or nonce"
 
-respondToChallenges :: Manager -> JWK -> AccountId -> Nonce -> ChallengeUrl -> IO (Either String (Challenge, Nonce))
+respondToChallenges :: Manager -> JWK -> AccountId -> Nonce -> ChallengeUrl -> IO (Challenge, Nonce)
 respondToChallenges manager key acc nonce (ChallengeUrl url) = do
   payload <- signExisting key nonce url acc emptyObject
   case payload of
-    Left e -> return $ Left $ show e
+    Left e -> throwIO $ AcmeException $ "respondToChallenges: " ++ show e
     Right spayload -> do
       initial <- parseRequest url
-      let request = initial { method = "POST"
-                            , requestBody = RequestBodyLBS $ encode spayload
-                            , requestHeaders = acmeHeaders
-                            }
-      response <- httpLbs request manager
-      let hs = responseHeaders response
+      let req = initial { method = "POST"
+                        , requestBody = RequestBodyLBS $ encode spayload
+                        , requestHeaders = acmeHeaders
+                        }
+      resp <- httpLbs req manager
+      let hs = responseHeaders resp
           mn = lookup hReplayNonce hs
           mc :: Maybe Challenge
-          mc = decode $ responseBody response
-      return $
-        case (mc, mn) of
-          (Just c, Just nonce') -> Right (c, Nonce $ unpack nonce')
-          _                     -> Left "proveControl: error"
-
+          mc = decode $ responseBody resp
+          status = responseStatus resp
+      if status /= status200
+      then throwIO $ AcmeException $ "respondToChallenges response:" ++ show status
+      else case (mc, mn) of
+          (Just c, Just nonce') -> return (c, Nonce $ unpack nonce')
+          _                     -> throwIO $ AcmeException "respondToChallenges: no challenge or nonce"
 
 pollForStatus :: IO ()
 pollForStatus = undefined
@@ -172,6 +173,7 @@ data AcmeException
   deriving Show
 
 instance Exception AcmeException
+
 
 -- https://tools.ietf.org/html/draft-ietf-acme-acme-15#section-8.1
 keyAuthorization :: JWK -> Token -> String
