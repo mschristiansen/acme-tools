@@ -8,7 +8,7 @@ import Data.Aeson (eitherDecode, encode, decode)
 import Data.Aeson.Types (emptyObject)
 import Data.ByteString.Char8 (unpack)
 import Data.Text.Encoding (decodeUtf8)
-import Network.ACME.JWS (signNew, signExisting, signEmpty, viewThumbprint)
+import Network.ACME.JWS (signNew, signExisting, signEmpty, viewThumbprint, sha256Digest)
 import Network.ACME.Types
 import Network.HTTP.Client
 import Network.HTTP.Client.TLS (tlsManagerSettings)
@@ -191,4 +191,4 @@ createChallengeHttpBody = keyAuthorization
 -- https://tools.ietf.org/html/draft-ietf-acme-acme-15#section-8.4
 createChallengeDnsRecord :: OrderIdentifier -> JWK -> Token -> String
 createChallengeDnsRecord (OrderIdentifier domain) k t =
-  "_acme-challenge." ++ domain ++ ". 300 IN TXT \"" ++ keyAuthorization k t ++"\""
+  "_acme-challenge." ++ domain ++ ". 300 IN TXT \"" ++ sha256Digest (keyAuthorization k t) ++"\""

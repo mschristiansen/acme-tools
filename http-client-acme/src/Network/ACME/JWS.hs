@@ -11,6 +11,7 @@ module Network.ACME.JWS
   , signEmpty
   , enc64url
   , dec64url
+  , sha256Digest
   ) where
 
 import Prelude hiding (writeFile, readFile)
@@ -24,6 +25,9 @@ import Data.Text (Text, pack)
 import Data.Text.Strict.Lens (utf8, _Text)
 import Network.ACME.Types (AccountId(..), Nonce(..))
 import Data.ByteString.Lazy (ByteString, writeFile, readFile)
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as BSC (pack)
+import Crypto.Hash (hash)
 
 
 -- | Generate a 4096 bit JSON Web Key (JWK).
@@ -42,10 +46,16 @@ viewPublicKey :: JWK -> Maybe JWK
 viewPublicKey = view asPublicKey
 
 viewThumbprint :: JWK -> String
-viewThumbprint jwk = view _Text $ view (re (base64url . digest) . utf8) d
+viewThumbprint jwk = view (re (base64url . digest) . utf8 . _Text) d
   where
     d :: Digest SHA256
     d = view thumbprint jwk
+
+sha256Digest :: String -> String
+sha256Digest s = view (re (base64url . digest) . utf8 . _Text) d
+  where
+    d :: Digest SHA256
+    d = hash $ BSC.pack s
 
 signNew :: ToJSON a => JWK -> Nonce -> String -> a -> IO (Either Error (JWS Identity Protection ACMEHeader))
 signNew k (Nonce n) url payload = runExceptT $ signJWS (encode payload) (Identity (header, k))

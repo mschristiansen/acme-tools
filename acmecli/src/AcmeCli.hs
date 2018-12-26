@@ -23,7 +23,7 @@ main = do
   mkey <- catch (readKey keyLocation) (\e -> print (e :: SomeException) >> return Nothing)
   key <- case mkey of
     Nothing -> do
-      putStrLn $ "No key found"
+      putStrLn "No key found"
       putStrLn $ "Generating new key and storing in " ++ keyLocation
       k <- generatePrivateKey
       writeKey keyLocation k
@@ -50,7 +50,7 @@ main = do
     (auths, m) <- mapMwithNonce (fetchChallenges http key aid) (orAuthorizations order') n
     mapM_ (printAuthorization key) auths
     ct <- selectChallengeType
-    (_, o) <- mapMwithNonce (respondToChallenges http key aid)  (map curl $ filter (isChallengeType ct) $ concat $ map aChallenges auths) m
+    (_, o) <- mapMwithNonce (respondToChallenges http key aid)  (map curl $ filter (isChallengeType ct) $ concatMap aChallenges auths) m
     let waitStatus :: Nonce -> IO ()
         waitStatus n = do
           putStrLn "Check status again?"
@@ -110,8 +110,8 @@ printOrder :: OrderStatus -> IO ()
 printOrder OrderStatus{..} = do
   putStrLn $ "Order status         : " ++ orStatus
   putStrLn $ "Order expires        : " ++ orExpires
-  putStrLn $ "Order Identifiers    : " ++ concat (map show orIdentifiers)
-  putStrLn $ "Order authorizations : " ++ concat (map show orAuthorizations)
+  putStrLn $ "Order Identifiers    : " ++ concatMap show orIdentifiers
+  putStrLn $ "Order authorizations : " ++ concatMap show orAuthorizations
   putStrLn $ "Order finalize       : " ++ show orFinalize
 
 printAuthorization :: JWK -> Authorization -> IO ()
@@ -119,7 +119,7 @@ printAuthorization key Authorization{..} = do
   putStrLn $ "Authorization for    : " ++ show aIdentifier
   putStrLn $ "Authorization status : " ++ aStatus
   putStrLn $ "Authorization expires: " ++ fromMaybe "-" aExpires
-  putStrLn $ "Complete one of the below challenges for each domain"
+  putStrLn "Complete one of the below challenges for each domain"
   mapM_ (printChallenge key aIdentifier) aChallenges
 
 printChallenge :: JWK -> OrderIdentifier -> Challenge -> IO ()
@@ -139,7 +139,7 @@ printChallenge key oid Challenge{..} = do
     _ -> putStrLn $ "Unknown challenge: " ++ ctype
 
 mapMwithNonce :: (Nonce -> a -> IO (b, Nonce)) -> [a] -> Nonce -> IO ([b], Nonce)
-mapMwithNonce f xs n = go [] xs n
+mapMwithNonce f = go []
   where
     go bs [] n' = return (reverse bs, n')
     go bs (a:as) n' = do
