@@ -10,23 +10,22 @@ import Network.ACME.JWS (JWK, readKey, writeKey, generatePrivateKey)
 import Network.ACME.LetsEncrypt (directoryUrl)
 import Network.ACME.Requests (newTlsManager, getDirectory, getNonce, createAccount, submitOrder, fetchChallenges, createChallengeDnsRecord, createChallengeHttpUrl, createChallengeHttpBody, respondToChallenges)
 import Network.ACME.Types (Account(..), Directory(..), AccountStatus(..), NewOrder(..), OrderIdentifier(..), OrderStatus(..), Nonce, Authorization(..), Challenge(..), isChallengeType)
+import AcmeCli.Files (getAcmeDirectory)
 
-
-keyLocation :: String
-keyLocation = "acmekey.json"
 
 main :: IO ()
 main = do
   putStrLn "Interactive Mode"
   putStrLn ""
-  putStr $ "Checking for existing key in " ++ keyLocation ++ " ... "
-  mkey <- catch (readKey keyLocation) (\e -> print (e :: SomeException) >> return Nothing)
+  fp <- getAcmeDirectory
+  putStr $ "Checking for existing key in " ++ fp ++ " ... "
+  mkey <- catch (readKey fp) (\e -> print (e :: SomeException) >> return Nothing)
   key <- case mkey of
     Nothing -> do
       putStrLn "No key found"
-      putStrLn $ "Generating new key and storing in " ++ keyLocation
+      putStrLn $ "Generating new key and storing in " ++ fp
       k <- generatePrivateKey
-      writeKey keyLocation k
+      writeKey fp k
       return k
     Just k  -> do
       putStrLn "Found key"

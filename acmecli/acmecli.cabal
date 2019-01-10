@@ -20,12 +20,14 @@ source-repository head
 
 library
   exposed-modules:
-      AcmeCli
+                  AcmeCli
+                  AcmeCli.Files
   other-modules:
       Paths_acmecli
   hs-source-dirs:
       src
   build-depends: base >=4.7 && <5
+               , directory
                , http-client-acme
   default-language: Haskell2010
 
