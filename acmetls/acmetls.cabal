@@ -22,6 +22,7 @@ library
   exposed-modules:
                   AcmeTls
                   AcmeTls.Files
+                  AcmeTls.Interface
   other-modules:
       Paths_acmetls
   hs-source-dirs:

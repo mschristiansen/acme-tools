@@ -10,58 +10,39 @@ import Network.ACME.JWS (JWK, readKey, writeKey, generatePrivateKey)
 import Network.ACME.LetsEncrypt (directoryUrl)
 import Network.ACME.Requests (newTlsManager, getDirectory, getNonce, createAccount, submitOrder, fetchChallenges, createChallengeDnsRecord, createChallengeHttpUrl, createChallengeHttpBody, respondToChallenges)
 import Network.ACME.Types (Account(..), Directory(..), AccountStatus(..), NewOrder(..), OrderIdentifier(..), OrderStatus(..), Nonce, Authorization(..), Challenge(..), isChallengeType)
-import AcmeTls.Files (getAcmeDirectory)
+import AcmeTls.Interface (Options(..), Command(..), getOptions)
 
 
 main :: IO ()
 main = do
-  putStrLn "Interactive Mode"
-  putStrLn ""
-  fp <- getAcmeDirectory
-  putStr $ "Checking for existing key in " ++ fp ++ " ... "
-  mkey <- catch (readKey fp) (\e -> print (e :: SomeException) >> return Nothing)
-  key <- case mkey of
-    Nothing -> do
-      putStrLn "No key found"
-      putStrLn $ "Generating new key and storing in " ++ fp
-      k <- generatePrivateKey
-      writeKey fp k
-      return k
-    Just k  -> do
-      putStrLn "Found key"
-      return k
-  putStr "Checking for account with Let's Encrypt ... "
-  http <- newTlsManager
-  Directory{..} <- getDirectory http directoryUrl
-  nonce <- getNonce http newNonce
-  (aid, acc, n) <- createAccount http key nonce newAccount (NewAccount ["mailto:mikkel@rheosystems.com"] True)
-  putStrLn "Found account"
-  putStrLn $ "Account ID : " ++ show aid
-  printAccount acc
-  putStrLn "Submit new order?"
-  yes <- yesOrNo
-  when yes $ do
-    order <- enterOrder
-    (oid, order', n) <- submitOrder http key aid n newOrder order
-    putStrLn $ "Order ID : " ++ show oid
-    printOrder order'
-    putStrLn "Fetching challenges..."
-    (auths, m) <- mapMwithNonce (fetchChallenges http key aid) (orAuthorizations order') n
-    mapM_ (printAuthorization key) auths
-    ct <- selectChallengeType
-    (_, o) <- mapMwithNonce (respondToChallenges http key aid)  (map curl $ filter (isChallengeType ct) $ concatMap aChallenges auths) m
-    let waitStatus :: Nonce -> IO ()
-        waitStatus n = do
-          putStrLn "Check status again?"
-          yes <- yesOrNo
-          if yes
-            then do
-              (auths, n') <- mapMwithNonce (fetchChallenges http key aid) (orAuthorizations order') n
-              mapM_ (printAuthorization key) auths
-              waitStatus n'
-            else waitStatus n
-    waitStatus o
-    return ()
+  opts <- getOptions
+  case optCommand opts of
+    ViewAccount{}     -> viewAccount opts
+    CreateAccount False _ -> putStrLn "Terms of Service not accepted. Exiting..."
+    CreateAccount True _es -> putStrLn "Creating account"
+  -- yes <- yesOrNo
+  -- when yes $ do
+  --   order <- enterOrder
+  --   (oid, order', n) <- submitOrder http key aid n newOrder order
+  --   putStrLn $ "Order ID : " ++ show oid
+  --   printOrder order'
+  --   putStrLn "Fetching challenges..."
+  --   (auths, m) <- mapMwithNonce (fetchChallenges http key aid) (orAuthorizations order') n
+  --   mapM_ (printAuthorization key) auths
+  --   ct <- selectChallengeType
+  --   (_, o) <- mapMwithNonce (respondToChallenges http key aid)  (map curl $ filter (isChallengeType ct) $ concatMap aChallenges auths) m
+  --   let waitStatus :: Nonce -> IO ()
+  --       waitStatus n = do
+  --         putStrLn "Check status again?"
+  --         yes <- yesOrNo
+  --         if yes
+  --           then do
+  --             (auths, n') <- mapMwithNonce (fetchChallenges http key aid) (orAuthorizations order') n
+  --             mapM_ (printAuthorization key) auths
+  --             waitStatus n'
+  --           else waitStatus n
+  --   waitStatus o
+  --   return ()
 
 
 yesOrNo :: IO Bool
@@ -144,3 +125,26 @@ mapMwithNonce f = go []
     go bs (a:as) n' = do
       (b, n'') <- f n' a
       go (b:bs) as n''
+
+viewAccount :: Options -> IO ()
+viewAccount Options{ optAcmeDirectory = fp } = do
+  putStr $ "Checking for existing key in " ++ fp ++ " ... "
+  mkey <- catch (readKey fp) (\e -> print (e :: SomeException) >> return Nothing)
+  key <- case mkey of
+           Nothing -> do
+             putStrLn "No key found."
+             putStrLn $ "Generating new key and storing in " ++ fp
+             k <- generatePrivateKey
+             writeKey fp k
+             return k
+           Just k  -> do
+             putStrLn "Found key"
+             return k
+  putStr "Checking for account with Let's Encrypt ... "
+  http <- newTlsManager
+  Directory{..} <- getDirectory http directoryUrl
+  nonce <- getNonce http newNonce
+  (aid, acc, n) <- createAccount http key nonce newAccount ExistingAccount
+  putStrLn "Found account"
+  putStrLn $ "Account ID : " ++ show aid
+  printAccount acc
