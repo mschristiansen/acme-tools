@@ -1,5 +1,5 @@
 {-# LANGUAGE RecordWildCards #-}
-module AcmeCli
+module AcmeTls
     ( main
     ) where
 
@@ -10,7 +10,7 @@ import Network.ACME.JWS (JWK, readKey, writeKey, generatePrivateKey)
 import Network.ACME.LetsEncrypt (directoryUrl)
 import Network.ACME.Requests (newTlsManager, getDirectory, getNonce, createAccount, submitOrder, fetchChallenges, createChallengeDnsRecord, createChallengeHttpUrl, createChallengeHttpBody, respondToChallenges)
 import Network.ACME.Types (Account(..), Directory(..), AccountStatus(..), NewOrder(..), OrderIdentifier(..), OrderStatus(..), Nonce, Authorization(..), Challenge(..), isChallengeType)
-import AcmeCli.Files (getAcmeDirectory)
+import AcmeTls.Files (getAcmeDirectory)
 
 
 main :: IO ()
@@ -34,7 +34,7 @@ main = do
   http <- newTlsManager
   Directory{..} <- getDirectory http directoryUrl
   nonce <- getNonce http newNonce
-  (aid, acc, n) <- createAccount http key nonce newAccount ExistingAccount
+  (aid, acc, n) <- createAccount http key nonce newAccount (NewAccount ["mailto:mikkel@rheosystems.com"] True)
   putStrLn "Found account"
   putStrLn $ "Account ID : " ++ show aid
   printAccount acc

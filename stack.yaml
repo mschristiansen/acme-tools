@@ -1,6 +1,6 @@
-resolver: lts-13.0
+resolver: lts-13.3
 packages:
-- acmecli
+- acmetls
 - http-client-acme
 - wai-middleware-acme
 - server-example
