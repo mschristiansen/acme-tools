@@ -69,7 +69,7 @@ instance FromJSON DirectoryMeta where
 -- must require some user interaction according to ACME
 -- specifications.
 data Account
-  = Account
+  = NewAccount
     { accountContact   :: [Email]
     , accountTosAgreed :: Bool
     }
@@ -79,7 +79,7 @@ data Account
 instance ToJSON Account where
   toJSON acc =
     case acc of
-      Account{..} ->
+      NewAccount{..} ->
         object [ "contact"              .= accountContact
                , "termsOfServiceAgreed" .= accountTosAgreed
                ]
@@ -87,7 +87,7 @@ instance ToJSON Account where
         object [ "onlyReturnExisting" .= True ]
   toEncoding acc =
     case acc of
-      Account{..} ->
+      NewAccount{..} ->
         pairs $ mconcat [ "contact"              .= accountContact
                         , "termsOfServiceAgreed" .= accountTosAgreed
                         ]

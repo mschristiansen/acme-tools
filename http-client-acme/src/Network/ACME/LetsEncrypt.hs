@@ -13,7 +13,7 @@ getCertificate = do
   http <- A.newTlsManager
   dirs <- A.getDirectory http directoryUrl
   nonce <- A.getNonce http (newNonce dirs)
-  let account = Account ["mailto:admin@example1.com"] True
+  let account = NewAccount ["mailto:admin@example1.com"] True
   key <- generatePrivateKey
   (acc, _, n) <- A.createAccount http key nonce (newAccount dirs) account
 
