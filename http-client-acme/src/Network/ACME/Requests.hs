@@ -1,20 +1,17 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Network.ACME.Requests where
 
-import Control.Monad (when)
 import Control.Exception (throwIO, Exception)
 import Crypto.JOSE.JWS (JWK)
 import Data.Aeson (eitherDecode, encode, decode)
 import Data.Aeson.Types (emptyObject)
 import Data.ByteString.Char8 (unpack)
-import Data.Text.Encoding (decodeUtf8)
 import Network.ACME.JWS (signNew, signExisting, signEmpty, viewThumbprint, sha256Digest)
 import Network.ACME.Types
 import Network.HTTP.Client
 import Network.HTTP.Client.TLS (tlsManagerSettings)
 import Network.HTTP.Types (status200, status201, status204)
 import Network.HTTP.Types.Header (RequestHeaders, HeaderName, hContentType, hUserAgent, hAcceptLanguage, hLocation, hAccept)
-import qualified Data.Text as T (unpack, pack)
 
 
 hReplayNonce :: HeaderName
@@ -36,9 +33,9 @@ getDirectory :: Manager -> DirectoryUrl -> IO Directory
 getDirectory http (DirectoryUrl url) = do
   req <- parseRequest url
   resp <- httpLbs req http
-  let status = responseStatus resp
-  if status /= status200
-    then throwIO $ AcmeException $ "getDirectory response: " ++ show status
+  let st = responseStatus resp
+  if st /= status200
+    then throwIO $ AcmeException $ "getDirectory response: " ++ show st
     else case eitherDecode (responseBody resp) of
            Left err -> throwIO $ AcmeException err
            Right dirs -> return dirs
@@ -49,17 +46,17 @@ getNonce manager (NonceUrl url) = do
   let req = initial { method = "HEAD" }
   resp <- httpLbs req manager
   let mnonce = fmap (Nonce . unpack) <$> lookup hReplayNonce $ responseHeaders resp
-      status = responseStatus resp
+      st = responseStatus resp
   -- Specifications says response code should be 200, but
   -- implementation gives 204. Should be fixed in new release.
   --
   -- See table in section
   -- https://tools.ietf.org/html/draft-ietf-acme-acme-18#section-7.1
-  if (status == status200 || status == status204)
+  if (st == status200 || st == status204)
     then case mnonce of
            Nothing -> throwIO $ AcmeException "getNonce: no nonce in header"
            Just nonce -> return nonce
-    else throwIO $ AcmeException $ "getNonce response: " ++ show status
+    else throwIO $ AcmeException $ "getNonce response: " ++ show st
 
 createAccount :: Manager -> JWK -> Nonce -> AccountUrl -> Account -> IO (AccountId, AccountStatus, Nonce)
 createAccount manager key nonce (AccountUrl url) account = do
@@ -76,16 +73,16 @@ createAccount manager key nonce (AccountUrl url) account = do
       let hs = responseHeaders resp
           mloc = lookup hLocation hs
           mn = lookup hReplayNonce hs
-          status = responseStatus resp
+          st = responseStatus resp
           macc :: Maybe AccountStatus
           macc = decode $ responseBody resp
       -- 200 returned for an existing account
       -- 201 returned for creating a new account
-      if status == status200 || status == status201
+      if st == status200 || st == status201
         then case (mloc, macc, mn) of
                (Just loc, Just acc, Just nonce') -> return (AccountId $ unpack loc, acc, Nonce $ unpack nonce')
                _                       -> throwIO $ AcmeException "createAccount: account url, account, or nonce not valid"
-        else throwIO $ AcmeException $ "createAccount response: " ++ show status
+        else throwIO $ AcmeException $ "createAccount response: " ++ show st
 
 submitOrder :: Manager -> JWK -> AccountId -> Nonce -> OrderUrl -> NewOrder -> IO (OrderId, OrderStatus, Nonce)
 submitOrder manager key acc nonce (OrderUrl url) order = do
@@ -104,11 +101,11 @@ submitOrder manager key acc nonce (OrderUrl url) order = do
           mn = lookup hReplayNonce hs
           morder :: Maybe OrderStatus
           morder = decode $ responseBody resp
-          status = responseStatus resp
-      if status /= status201
+          st = responseStatus resp
+      if st /= status201
         then throwIO $ AcmeException ""
         else case (mloc, morder, mn) of
-               (Just loc, Just order, Just nonce') -> return (OrderId $ unpack loc, order, Nonce $ unpack nonce')
+               (Just loc, Just o, Just nonce') -> return (OrderId $ unpack loc, o, Nonce $ unpack nonce')
                _             -> throwIO $ AcmeException "submitOrder: no OrderStatus or nonce"
 
 fetchChallenges :: Manager -> JWK -> AccountId -> Nonce -> AuthUrl -> IO (Authorization, Nonce)
@@ -127,9 +124,9 @@ fetchChallenges manager key acc nonce (AuthUrl url) = do
           mn = lookup hReplayNonce hs
           mauth :: Maybe Authorization
           mauth = decode $ responseBody resp
-          status = responseStatus resp
-      if status /= status200
-        then throwIO $ AcmeException $ "fetchChallenges response:" ++ show status
+          st = responseStatus resp
+      if st /= status200
+        then throwIO $ AcmeException $ "fetchChallenges response:" ++ show st
         else case (mauth, mn) of
           (Just auth, Just nonce') -> return (auth, Nonce $ unpack nonce')
           _                        -> throwIO $ AcmeException "fetchChallenges: no auth or nonce"
@@ -150,9 +147,9 @@ respondToChallenges manager key acc nonce (ChallengeUrl url) = do
           mn = lookup hReplayNonce hs
           mc :: Maybe Challenge
           mc = decode $ responseBody resp
-          status = responseStatus resp
-      if status /= status200
-      then throwIO $ AcmeException $ "respondToChallenges response:" ++ show status
+          st = responseStatus resp
+      if st /= status200
+      then throwIO $ AcmeException $ "respondToChallenges response:" ++ show st
       else case (mc, mn) of
           (Just c, Just nonce') -> return (c, Nonce $ unpack nonce')
           _                     -> throwIO $ AcmeException "respondToChallenges: no challenge or nonce"
