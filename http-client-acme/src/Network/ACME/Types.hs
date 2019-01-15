@@ -7,7 +7,7 @@ module Network.ACME.Types where
 
 import GHC.Generics (Generic)
 import Data.Aeson
-import Data.Text (Text)
+
 
 type Url = String
 type Email = String

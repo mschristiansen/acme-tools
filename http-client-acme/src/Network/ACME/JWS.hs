@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Network.ACME.JWS
   ( JWK
+  , Signed
   , generatePrivateKey
   , writeKey
   , readKey
@@ -21,11 +22,10 @@ import Crypto.JOSE.JWK (JWK, base64url)
 import Crypto.JOSE.JWS hiding (header)
 import Data.Aeson (ToJSON, encode, (.=), decode)
 import Data.Functor.Identity
-import Data.Text (Text, pack)
+import Data.Text (pack)
 import Data.Text.Strict.Lens (utf8, _Text)
 import Network.ACME.Types (AccountId(..), Nonce(..))
 import Data.ByteString.Lazy (ByteString, writeFile, readFile)
-import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC (pack)
 import Crypto.Hash (hash)
 
@@ -46,10 +46,10 @@ viewPublicKey :: JWK -> Maybe JWK
 viewPublicKey = view asPublicKey
 
 viewThumbprint :: JWK -> String
-viewThumbprint jwk = view (re (base64url . digest) . utf8 . _Text) d
+viewThumbprint jk = view (re (base64url . digest) . utf8 . _Text) d
   where
     d :: Digest SHA256
-    d = view thumbprint jwk
+    d = view thumbprint jk
 
 sha256Digest :: String -> String
 sha256Digest s = view (re (base64url . digest) . utf8 . _Text) d
@@ -57,7 +57,9 @@ sha256Digest s = view (re (base64url . digest) . utf8 . _Text) d
     d :: Digest SHA256
     d = hash $ BSC.pack s
 
-signNew :: ToJSON a => JWK -> Nonce -> String -> a -> IO (Either Error (JWS Identity Protection ACMEHeader))
+type Signed = JWS Identity Protection ACMEHeader
+
+signNew :: ToJSON a => JWK -> Nonce -> String -> a -> IO (Either Error Signed)
 signNew k (Nonce n) url payload = runExceptT $ signJWS (encode payload) (Identity (header, k))
   where
     -- Can be signed with either ES256 or EdDSA
@@ -66,7 +68,7 @@ signNew k (Nonce n) url payload = runExceptT $ signJWS (encode payload) (Identit
     header = ACMEHeader (newJWSHeader (Protected, ES256)
       & set jwk (HeaderParam Protected <$> viewPublicKey k)) n url
 
-signExisting :: ToJSON a => JWK -> Nonce -> String -> AccountId -> a -> IO (Either Error (JWS Identity Protection ACMEHeader))
+signExisting :: ToJSON a => JWK -> Nonce -> String -> AccountId -> a -> IO (Either Error Signed)
 signExisting k (Nonce n) url (AccountId acc) payload = runExceptT $ signJWS (encode payload) (Identity (header, k))
   where
     header :: ACMEHeader Protection
@@ -75,7 +77,7 @@ signExisting k (Nonce n) url (AccountId acc) payload = runExceptT $ signJWS (enc
 
 -- | Used for POST-as-GET requests to sign an empty payload
 -- https://tools.ietf.org/html/draft-ietf-acme-acme-15#section-6.3
-signEmpty :: JWK -> Nonce -> String -> AccountId -> IO (Either Error (JWS Identity Protection ACMEHeader))
+signEmpty :: JWK -> Nonce -> String -> AccountId -> IO (Either Error Signed)
 signEmpty k (Nonce n) url (AccountId acc) = runExceptT $ signJWS [] (Identity (header, k))
   where
     header :: ACMEHeader Protection
