@@ -51,15 +51,15 @@ getNonce manager (NonceUrl url) = do
   let mnonce = fmap (Nonce . unpack) <$> lookup hReplayNonce $ responseHeaders resp
       status = responseStatus resp
   -- Specifications says response code should be 200, but
-  -- implementation gives 204.
+  -- implementation gives 204. Should be fixed in new release.
   --
   -- See table in section
   -- https://tools.ietf.org/html/draft-ietf-acme-acme-18#section-7.1
-  if status /= status204
-    then throwIO $ AcmeException $ "getNonce response: " ++ show status
-    else case mnonce of
+  if (status == status200 || status == status204)
+    then case mnonce of
            Nothing -> throwIO $ AcmeException "getNonce: no nonce in header"
            Just nonce -> return nonce
+    else throwIO $ AcmeException $ "getNonce response: " ++ show status
 
 createAccount :: Manager -> JWK -> Nonce -> AccountUrl -> Account -> IO (AccountId, AccountStatus, Nonce)
 createAccount manager key nonce (AccountUrl url) account = do
